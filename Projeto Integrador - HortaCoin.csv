@@ -1,6 +1,6 @@
 TIPO,CONTEÚDO,DESCRIÇÃO,PRIORIDADE,INDENTAÇÃO,RESPONSÁVEL,DATA,DURAÇÃO,UNIDADE_DURAÇÃO,PRAZO
 meta,view_style=list,,,,,,,,
-,,,,,,,,,,
+,,,,,,,,,
 section,Cronograma de Sprints,,,,,
 task,Fase 1: Descoberta e Definição,Período: 2025-07-30 a 2025-09-03,2,1,,,
 task,Aula 4 — Personas e Jornada,"Criar personas (Ana, Carlos, Maria); Jornada atual vs desejada; Miro/FigJam",2,2,,20-08-25,
@@ -34,4 +34,5 @@ task,Entregas — Validações,Mapa da Empatia (A3); Personas/Jornada (A4); Test
 task,Entregas — Apresentações,Pitch Final (A19); Demo Técnica (A19),3,1,,,
 note,Critérios de Sucesso,,,,,,16-09-25,,
 ,,,,,,,,,,
+
 
