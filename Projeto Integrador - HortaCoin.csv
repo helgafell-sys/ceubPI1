@@ -1,6 +1,6 @@
 TIPO,CONTEÚDO,DESCRIÇÃO,PRIORIDADE,INDENTAÇÃO,RESPONSÁVEL,DATA,DURAÇÃO,UNIDADE_DURAÇÃO,PRAZO
 meta,view_style=list,,,,,,,,
-,,,,,,,,,,
+,,,,,,,,,
 section,Cronograma de Sprints,,,,,,,,
 task,Fase 1: Descoberta e Definição,Período: 30-07-25 a 03-09-25,2,1,,,,,
 task,Aula 1 — Boas-vindas,Apresentação inicial do projeto de hortas urbanas; Participação e definição do tema,2,2,,30-07-25,,,
@@ -34,3 +34,4 @@ task,Entregas — Validações,Mapa da Empatia (A3); Personas/Jornada (A4); Test
 task,Entregas — Apresentações,Pitch Final (A19); Demo Técnica (A19),3,1,,,,,
 note,Critérios de Sucesso,,,,16-09-25,,,
 ,,,,,,,,,,
+
