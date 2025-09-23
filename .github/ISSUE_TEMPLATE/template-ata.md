@@ -8,31 +8,35 @@ assignees: []
 
 # 📝 Ata de Reunião
 
-**Data:**  
-**Hora de início:**  
-**Hora de término:**  
-**Local / Link da Reunião:**  
-**Participantes:**  
+**Data:** <!-- insira a data da reunião -->  
+**Hora de início:** <!-- hh:mm -->  
+**Hora de término:** <!-- hh:mm -->  
+**Local / Link da Reunião:** <!-- presencial, link ou plataforma -->  
+**Participantes:** <!-- nomes dos participantes -->
 
 ---
 
 ## 📌 Pauta
-- [ ] Item 1
-- [ ] Item 2
+- [ ] <!-- Item de pauta 1 -->
+- [ ] <!-- Item de pauta 2 -->
 
 ---
 
 ## 💡 Discussões e Decisões
-| Assunto | Responsável | Prazo | Observações |
-|---------|------------|-------|------------|
-|         |            |       |            |
+| Campo          | Detalhes                                      |
+|----------------|-----------------------------------------------|
+| **Assunto**    | <!-- Descreva o principal assunto/decisão --> |
+| **Responsável**| <!-- Quem ficou responsável -->               |
+| **Prazo**      | <!-- Data ou prazo definido -->               |
+| **Observações**| <!-- Observações adicionais -->               |
 
 ---
 
 ## ✅ Próximas Ações
-- [ ] Tarefa 1 — *Responsável*  
-- [ ] Tarefa 2 — *Responsável*  
+- [ ] <!-- Ação 1 – Responsável -->
+- [ ] <!-- Ação 2 – Responsável -->
 
 ---
 
-**Observações Finais:**
+**Observações Finais:**  
+<!-- Comentários, notas ou considerações finais -->
