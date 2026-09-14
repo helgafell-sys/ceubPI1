@@ -127,3 +127,242 @@ Mais Trabalho → Mais Produção → Mais Produtos → Mais Incentivo → Mais 
 
 
 *Este projeto representa mais que um app - é um movimento para transformar como as cidades produzem alimentos e como as comunidades se organizam para o bem comum.*
+
+---
+
+## 📦 **Tech Stack**
+
+### **Frontend**
+- **React 18+** com TypeScript
+- **Vite** - Build tool e dev server
+- **TailwindCSS** - Estilização
+- **Shadcn/ui** - Componentes UI reutilizáveis
+- **Axios/Fetch API** - Requisições HTTP
+
+### **Backend**
+- **Node.js** com Express.js
+- **JWT (JSON Web Tokens)** - Autenticação
+- **MySQL 8.0** - Banco de dados relacional
+
+### **Infraestrutura**
+- **Docker & Docker Compose** - Containerização
+- **Nginx** (opcional) - Reverse proxy
+
+### **Arquitetura**
+- API RESTful
+- Autenticação baseada em JWT com Bearer tokens
+- Role-based access control (RBAC) para admin/usuário
+- Banco de dados relacional com soft deletes
+- Imagens com fallback SVG para recompensas
+
+---
+
+## 🚀 **Como Rodar o Projeto**
+
+### **Pré-requisitos**
+- Docker e Docker Compose instalados
+- Git para clonar o repositório
+- Um navegador moderno (Chrome, Firefox, Safari, Edge)
+
+### **Instalação e Execução**
+
+1. **Clone o repositório**
+   ```bash
+   git clone <seu-repo-url>
+   cd ceubPI1
+   ```
+
+2. **Inicie os containers com Docker Compose**
+   ```bash
+   docker compose up
+   ```
+   Isso irá:
+   - Criar e popular o banco de dados MySQL
+   - Iniciar o backend Node.js na porta 8080
+   - Iniciar o frontend Vite na porta 3000
+
+3. **Acesse a aplicação**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8080
+   - Database: localhost:3306
+
+### **Parar os containers**
+   ```bash
+   docker compose down
+   ```
+
+### **Dados de Teste**
+
+A aplicação inclui seed data com usuários de exemplo:
+
+**Usuário Comum:**
+- Email: `user@horta.local`
+- Senha: `senha123`
+
+**Administrador (Gestor de Horta):**
+- Email: `admin@horta.local`
+- Senha: `senha123`
+
+---
+
+## 📁 **Estrutura do Projeto**
+
+```
+ceubPI1/
+├── frontend/              # React app com Vite
+│   ├── src/
+│   │   ├── components/    # Páginas: TasksPage, RewardsPage, ProfilePage
+│   │   ├── App.tsx        # Router principal
+│   │   └── main.tsx       # Entry point
+│   ├── package.json
+│   └── Dockerfile
+│
+├── backend/               # Express API
+│   ├── index.js           # Servidor e endpoints
+│   ├── package.json
+│   └── Dockerfile
+│
+├── db/                    # Database initialization
+│   ├── init.sql           # Schema + seed data
+│   └── config.cnf         # Configuração MySQL
+│
+└── docker-compose.yml     # Orquestração dos containers
+```
+
+---
+
+## 🔌 **Principais Endpoints da API**
+
+### **Autenticação**
+- `POST /auth/login` - Login (retorna JWT token)
+
+### **Tarefas**
+- `GET /tarefas_disponiveis` - Listar tarefas disponíveis
+- `POST /tarefas` (admin) - Criar tarefa
+- `PUT /tarefas/:id` (admin) - Atualizar tarefa
+- `DELETE /tarefas/:id` (admin) - Deletar tarefa
+
+### **Recompensas**
+- `GET /recompensas` - Listar recompensas disponíveis
+- `POST /recompensas` (admin) - Criar recompensa
+- `PUT /recompensas/:id` (admin) - Atualizar recompensa
+- `DELETE /recompensas/:id` (admin) - Deletar recompensa
+
+### **Histórico do Usuário**
+- `GET /me/historico` - Tarefas concluídas e recompensas resgatadas do usuário
+
+### **Histórico da Horta (Admin)**
+- `GET /admin/horta/historico?id_horta=1` - Tarefas concluídas e recompensas resgatadas da horta
+
+---
+
+## 📝 **Funcionalidades**
+
+✅ Autenticação com JWT  
+✅ Gestão de tarefas (CRUD completo)  
+✅ Gestão de recompensas (CRUD completo)  
+✅ Sistema de gamificação com moedas virtuais (HortaCoins)  
+✅ Histórico de tarefas concluídas por usuário  
+✅ Histórico de recompensas resgatadas por usuário  
+✅ Panel administrativo integrado nas abas  
+✅ Histórico de atividades da horta (para admin)  
+✅ Fallback visual para imagens externas bloqueadas  
+
+---
+
+## �️ **Estrutura do Banco de Dados**
+
+### **Tabelas Principais**
+
+#### **Perfil**
+Perfis de usuários que acumulam pontos e conquistam recompensas.
+```
+id (PK)           | int          | Auto-increment
+nome              | varchar(64)  | Nome do perfil
+```
+
+#### **Usuario**
+Usuários que fazem login na plataforma.
+```
+id (PK)                   | int          | Auto-increment
+nome                      | varchar(128) | Nome completo
+email (UNIQUE)            | varchar(128) | Email único
+password_hash             | varchar(255) | Hash bcrypt da senha
+ativo                     | boolean      | Status ativo/inativo
+id_perfil (FK)            | int          | Referência ao Perfil
+```
+
+#### **Horta**
+Hortas urbanas cadastradas no sistema.
+```
+id (PK)      | int          | Auto-increment
+nome (UNIQUE)| varchar(128) | Nome da horta
+descricao    | varchar(255) | Descrição da horta
+```
+
+#### **UsuarioHortaRole**
+Relacionamento muitos-para-muitos entre Usuário e Horta com papéis.
+```
+id_usuario (FK, PK) | int         | Referência ao Usuario
+id_horta (FK, PK)   | int         | Referência ao Horta
+papel (PK)          | varchar(16) | ADMIN ou MEMBER
+```
+
+#### **Tarefas**
+Tarefas disponíveis nas hortas que usuários podem completar.
+```
+id (PK)              | int          | Auto-increment
+titulo               | varchar(128) | Título da tarefa
+tipo                 | varchar(32)  | Plantio, Manutenção, Colheita, Compostagem
+descricao            | varchar(128) | Descrição breve
+dificuldade          | int          | Nível de dificuldade
+moedas               | int          | HortaCoins como recompensa
+mudas                | int          | Quantidade de mudas entregues (se houver)
+tempo                | int          | Tempo estimado em minutos
+horta                | varchar(128) | Nome da horta (redundante com id_horta)
+concluido            | boolean      | Status de conclusão
+id_perfil (FK)       | int          | Perfil que completou a tarefa
+id_horta (FK)        | int          | Horta associada
+created_by (FK)      | int          | Usuário que criou a tarefa
+updated_at           | datetime     | Última atualização
+deleted_at           | datetime     | Soft delete timestamp
+```
+
+#### **Recompensas**
+Recompensas que usuários podem resgatar com suas moedas.
+```
+id (PK)                  | int          | Auto-increment
+nome                     | varchar(128) | Nome da recompensa
+descricao                | text         | Descrição detalhada
+tipo                     | varchar(32)  | Produto, Ferramentas, Plantas, Educação, Acessórios, Workshop
+preco                    | int          | Custo em HortaCoins
+src                      | varchar(256) | URL da imagem da recompensa
+quantidade_disponivel    | int          | Unidades disponíveis
+id_horta (FK)            | int          | Horta que oferece a recompensa
+created_by (FK)          | int          | Usuário que criou a recompensa
+updated_at               | datetime     | Última atualização
+deleted_at               | datetime     | Soft delete timestamp
+```
+
+#### **PerfilRecompensas**
+Histórico de recompensas resgatadas por usuários.
+```
+id_perfil (FK, PK)     | int | Referência ao Perfil
+id_recompensa (FK, PK) | int | Referência ao Recompensas
+```
+
+
+### **Soft Deletes**
+
+Todas as tabelas com dados mestre (`Tarefas` e `Recompensas`) implementam soft deletes via coluna `deleted_at`. Registros nunca são realmente deletados do banco, apenas marcados com timestamp de deleção.
+
+```sql
+-- Exemplo de query com soft delete
+SELECT * FROM Tarefas WHERE deleted_at IS NULL;
+```
+
+---
+
+## �👥 **Contribuidores**
+
+Projeto desenvolvido pela turma de Projeto Integrador 1 do curso de ADS
