@@ -6,19 +6,39 @@ CREATE TABLE IF NOT EXISTS Perfil (
 CREATE TABLE IF NOT EXISTS Horta (
   id int AUTO_INCREMENT PRIMARY KEY,
   nome varchar(128) NOT NULL UNIQUE,
-  descricao varchar(255)
+  descricao varchar(255),
+  latitude DECIMAL(10, 8) NULL,
+  longitude DECIMAL(11, 8) NULL,
+  endereco varchar(255) NULL,
+  cidade varchar(100) NULL,
+  uf char(2) NULL,
+  contato varchar(160) NULL
 );
 
 CREATE TABLE IF NOT EXISTS Usuario (
   id int AUTO_INCREMENT PRIMARY KEY,
   nome varchar(128) NOT NULL,
   email varchar(128) NOT NULL UNIQUE,
-  password_hash varchar(255) NOT NULL,
+  password_hash varchar(255) NULL,
   ativo boolean default true,
   id_perfil int NULL,
+  cidade varchar(100) NULL,
+  uf char(2) NULL,
+  telefone varchar(24) NULL,
+  last_login_at datetime NULL,
   CONSTRAINT fk_usuario_perfil
   FOREIGN KEY (id_perfil)
   REFERENCES Perfil(id)
+);
+
+CREATE TABLE IF NOT EXISTS PasswordResetToken (
+  id int AUTO_INCREMENT PRIMARY KEY,
+  id_usuario int NOT NULL,
+  token_hash char(64) NOT NULL UNIQUE,
+  expires_at datetime NOT NULL,
+  used_at datetime NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_password_reset_user (id_usuario, used_at, expires_at)
 );
 
 CREATE TABLE IF NOT EXISTS UsuarioHortaRole (
@@ -59,12 +79,31 @@ CREATE TABLE IF NOT EXISTS Tarefas (
   descricao varchar(128),
   id_perfil int,
   concluido boolean default false,
+  status varchar(24) NOT NULL DEFAULT 'available',
   moedas int,
+  moedas_recebidas int NULL,
+  xp int NOT NULL DEFAULT 50,
+  xp_recebido int NULL,
   mudas int,
   tempo int,
   id_horta int NULL,
   created_by int NULL,
   updated_at datetime NULL,
+  completed_at datetime NULL,
+  completion_submitted_at datetime NULL,
+  completion_photo_url varchar(512) NULL,
+  completion_latitude DECIMAL(10, 8) NULL,
+  completion_longitude DECIMAL(11, 8) NULL,
+  completion_review_status varchar(24) NOT NULL DEFAULT 'approved',
+  completion_ai_status varchar(24) NOT NULL DEFAULT 'not_requested',
+  ai_resultado varchar(24) NULL,
+  ai_confianca decimal(4,3) NULL,
+  ai_justificativa varchar(512) NULL,
+  ai_modelo varchar(64) NULL,
+  ai_analisado_em datetime NULL,
+  completion_review_note varchar(512) NULL,
+  completion_reviewed_by int NULL,
+  completion_reviewed_at datetime NULL,
   deleted_at datetime NULL,
   CONSTRAINT fk_perfil_tarefas
   FOREIGN KEY (id_perfil)
@@ -73,9 +112,66 @@ CREATE TABLE IF NOT EXISTS Tarefas (
   FOREIGN KEY (id_horta)
   REFERENCES Horta(id)
 );
+
+CREATE TABLE IF NOT EXISTS TarefaComprovacaoHistorico (
+  id int AUTO_INCREMENT PRIMARY KEY,
+  id_tarefa int NOT NULL,
+  id_perfil int NOT NULL,
+  foto_url varchar(512) NOT NULL,
+  latitude DECIMAL(10, 8) NULL,
+  longitude DECIMAL(11, 8) NULL,
+  localizacao_status varchar(32) NULL,
+  distancia_metros int NULL,
+  ai_status varchar(24) NULL,
+  ai_resultado varchar(24) NULL,
+  ai_confianca decimal(4,3) NULL,
+  ai_justificativa varchar(512) NULL,
+  ai_modelo varchar(64) NULL,
+  ai_analisado_em datetime NULL,
+  motivo_reprovacao varchar(512) NOT NULL,
+  revisado_por int NOT NULL,
+  enviado_em datetime NULL,
+  rejeitado_em datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_comprovacao_historico_tarefa (id_tarefa, id)
+);
+
+CREATE TABLE IF NOT EXISTS PerfilGamificacao (
+  id_perfil int PRIMARY KEY,
+  xp_total int NOT NULL DEFAULT 0,
+  streak_days int NOT NULL DEFAULT 0,
+  last_activity_date date NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_gamificacao_perfil FOREIGN KEY (id_perfil) REFERENCES Perfil(id)
+);
+
+CREATE TABLE IF NOT EXISTS ConquistasPerfil (
+  id int AUTO_INCREMENT PRIMARY KEY,
+  id_perfil int NOT NULL,
+  achievement_key varchar(48) NOT NULL,
+  xp_awarded int NOT NULL DEFAULT 0,
+  unlocked_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_perfil_conquista (id_perfil, achievement_key),
+  CONSTRAINT fk_conquista_perfil FOREIGN KEY (id_perfil) REFERENCES Perfil(id)
+);
+
+CREATE TABLE IF NOT EXISTS DesafioComunitario (
+  id int AUTO_INCREMENT PRIMARY KEY,
+  id_horta int NOT NULL,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  goal_tasks int NOT NULL,
+  completed_at datetime NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_horta_desafio_periodo (id_horta, period_start),
+  CONSTRAINT fk_desafio_horta FOREIGN KEY (id_horta) REFERENCES Horta(id)
+);
+
 CREATE TABLE IF NOT EXISTS PerfilRecompensas (
   id_perfil int,
   id_recompensa int,
+  redeemed_at datetime NULL,
+  redeemed_price int NULL,
   CONSTRAINT fk_perfil_recompensas
   FOREIGN KEY (id_perfil)
   REFERENCES Perfil(id),
@@ -111,7 +207,7 @@ INSERT INTO Tarefas (
   "Remover ervas daninhas do canteiro de tomates", 1, 80, 0, 60
 ), (
   "Plantar mudas de alface", "Plantio", "Horta Comunitária Centro",
-  "Plantar 20 mudas de alface na área designada", 1, 120, 20, 90
+  "Plantar 20 mudas de alface na área designada", 1, 120, 0, 90
 ),
 (
   "Colher vegetais maduros", "colheita", "Horta Orgânica Vila Nova",
@@ -133,7 +229,7 @@ INSERT INTO Tarefas (
   "Fazer colheita seletiva de tomates maduros para distribuição", 0, 95, 0, 40
 ), (
   "Plantar mudas de couve", "Plantio", "Horta Comunitária Centro",
-  "Plantar 15 mudas de couve no canteiro lateral", 1, 125, 15, 80
+  "Plantar 15 mudas de couve no canteiro lateral", 1, 125, 0, 80
 ), (
   "Revisar irrigação por gotejamento", "Manutenção", "Horta Orgânica Vila Nova",
   "Checar vazamentos e ajustar fluxo dos gotejadores", 2, 170, 0, 95
@@ -342,17 +438,17 @@ ON Recompensas.id = cnt.id_recompensa;
 
 CREATE VIEW SaldoPerfil AS
 SELECT
-  COALESCE(t.total_moedas, 0) - COALESCE(r.total_gasto, 0) AS Saldo, 
+  GREATEST(0, COALESCE(t.total_moedas, 0) - COALESCE(r.total_gasto, 0)) AS Saldo,
   p.id as id_perfil
 FROM Perfil p
 LEFT JOIN (
-  SELECT id_perfil, SUM(moedas) AS total_moedas
+  SELECT id_perfil, SUM(COALESCE(moedas_recebidas, moedas)) AS total_moedas
   FROM Tarefas
   WHERE concluido
   GROUP BY id_perfil
 ) t ON p.id = t.id_perfil
 LEFT JOIN (
-  SELECT pr.id_perfil, SUM(rec.preco) AS total_gasto
+  SELECT pr.id_perfil, SUM(COALESCE(pr.redeemed_price, rec.preco)) AS total_gasto
   FROM PerfilRecompensas pr
   JOIN Recompensas rec ON pr.id_recompensa = rec.id
   GROUP BY pr.id_perfil

@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react';
+import { API_URL } from '../config';
+import { useState, useEffect, useRef } from 'react';
 import { Sprout, Lock, Gift, PlusCircle, Edit2, Trash2, Loader } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
+import type { AdminNavigationIntent } from '../types/adminNavigation';
+import MyRedeemedRewardsSection, { type RedeemedReward } from './MyRedeemedRewardsSection';
 
 interface Reward {
   id: number;
   nome?: string;
   titulo?: string;
-  descricao: string;
+  descricao?: string | null;
   tipo: string;
   preco: number;
   src?: string;
@@ -36,12 +39,19 @@ function normalizeImageSrc(src: string | undefined, title: string) {
   return src;
 }
 
-export default function RewardsPage() {
-  const { token, user, isAdmin } = useAuth();
+interface RewardsPageProps {
+  navigationIntent?: AdminNavigationIntent | null;
+}
+
+export default function RewardsPage({ navigationIntent }: RewardsPageProps) {
+  const { token, user, isAdmin, activeGardenId } = useAuth();
   const idPerfil = user?.id_perfil || 1;
-  const idHorta = user?.roles.find((r) => r.role === 'ADMIN')?.id_horta || 1;
+  const idHorta = activeGardenId;
 
   const [rewards, setRewards] = useState<Reward[]>([]);
+  const [myRedemptions, setMyRedemptions] = useState<RedeemedReward[]>([]);
+  const [isLoadingMyRedemptions, setIsLoadingMyRedemptions] = useState(true);
+  const [myRedemptionsError, setMyRedemptionsError] = useState<string | null>(null);
   const [coins, setCoins] = useState(0);
   const [isLoadingRewards, setIsLoadingRewards] = useState(false);
 
@@ -49,6 +59,7 @@ export default function RewardsPage() {
   const [editingRecompensaId, setEditingRecompensaId] = useState<number | null>(null);
   const [isSavingRecompensa, setIsSavingRecompensa] = useState(false);
   const [recompensasResgatadasHorta, setRecompensasResgatadasHorta] = useState<AdminRewardRedeemed[]>([]);
+  const redemptionHistoryRef = useRef<HTMLDivElement>(null);
   const [formRecompensa, setFormRecompensa] = useState({
     nome: '',
     descricao: '',
@@ -57,14 +68,17 @@ export default function RewardsPage() {
     quantidade_disponivel: 10,
   });
 
-  const fetchCoins = async (idPerfilAtual: number) => {
-    const response = await fetch('http://localhost:8080/minhas_moedas', {
+  const fetchCoins = async () => {
+    if (!token) {
+      throw new Error('Sessão expirada');
+    }
+
+    const response = await fetch(`${API_URL}/minhas_moedas`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ id_perfil: idPerfilAtual }),
     });
 
     if (!response.ok) {
@@ -75,13 +89,36 @@ export default function RewardsPage() {
     return Number(result.Saldo) || 0;
   };
 
-  const fetchRewards = async () => {
-    const endpoint = isAdmin ? 'http://localhost:8080/recompensas' : 'http://localhost:8080/recompensas_disponiveis';
-    const headers: Record<string, string> = {};
-
-    if (isAdmin && token) {
-      headers.Authorization = `Bearer ${token}`;
+  const fetchMyRedemptions = async () => {
+    if (!token) {
+      setMyRedemptions([]);
+      setMyRedemptionsError(null);
+      setIsLoadingMyRedemptions(false);
+      return;
     }
+    setIsLoadingMyRedemptions(true);
+    setMyRedemptionsError(null);
+    try {
+      const response = await fetch(`${API_URL}/me/historico`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Falha ao carregar seu histórico de resgates');
+      const history = await response.json();
+      setMyRedemptions(history.recompensas_resgatadas || []);
+    } catch (error) {
+      console.error('Erro ao carregar resgates do usuário:', error);
+      setMyRedemptions([]);
+      setMyRedemptionsError('Não foi possível carregar suas recompensas resgatadas. Tente novamente.');
+    } finally {
+      setIsLoadingMyRedemptions(false);
+    }
+  };
+
+  const fetchRewards = async () => {
+    const endpoint = isAdmin
+      ? `${API_URL}/recompensas?id_horta=${idHorta}`
+      : `${API_URL}/recompensas_disponiveis?id_horta=${idHorta ?? ''}`;
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
     const response = await fetch(endpoint, { headers });
     if (!response.ok) {
@@ -95,13 +132,13 @@ export default function RewardsPage() {
   const fetchData = async () => {
     setIsLoadingRewards(true);
     try {
-      const [rewardData, coinsData] = await Promise.all([fetchRewards(), fetchCoins(idPerfil)]);
+      const [rewardData, coinsData] = await Promise.all([fetchRewards(), fetchCoins()]);
       setCoins(coinsData);
       setRewards(rewardData);
 
       if (isAdmin && token) {
         const historyResponse = await fetch(
-          `http://localhost:8080/admin/horta/historico?id_horta=${idHorta}`,
+          `${API_URL}/admin/horta/historico?id_horta=${idHorta}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
@@ -126,18 +163,49 @@ export default function RewardsPage() {
     fetchData();
   }, [isAdmin, token, idHorta]);
 
-  const redeemReward = async (idRecompensa: number, idPerfilAtual: number) => {
+  useEffect(() => {
+    if (isAdmin) {
+      setMyRedemptions([]);
+      setMyRedemptionsError(null);
+      setIsLoadingMyRedemptions(false);
+      return;
+    }
+    void fetchMyRedemptions();
+  }, [isAdmin, token]);
+
+  useEffect(() => {
+    if (navigationIntent?.focusRewardHistory) {
+      requestAnimationFrame(() => redemptionHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
+  }, [navigationIntent?.focusRewardHistory]);
+
+  const redeemReward = async (idRecompensa: number) => {
+    if (!token) {
+      toast.error('Sessão expirada, faça login novamente');
+      return;
+    }
     try {
-      await fetch('http://localhost:8080/resgatar_recompensa', {
+      const response = await fetch(`${API_URL}/resgatar_recompensa`, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ id_recompensa: idRecompensa, id_perfil: idPerfilAtual }),
+        body: JSON.stringify({ id_recompensa: idRecompensa, id_horta: idHorta }),
       });
+
+      if (response.status === 409) {
+        toast.error('Recompensa indisponível');
+        await fetchData();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error('Falha ao resgatar recompensa');
+      }
+
       toast.success('Recompensa resgatada');
-      await fetchData();
+      await Promise.all([fetchData(), fetchMyRedemptions()]);
     } catch (error) {
       console.error('Error redeeming reward:', error);
       toast.error('Erro ao resgatar recompensa');
@@ -157,8 +225,8 @@ export default function RewardsPage() {
 
   const handleSaveRecompensa = async () => {
     if (!isAdmin || !token) return;
-    if (!formRecompensa.nome.trim() || !formRecompensa.descricao.trim()) {
-      toast.error('Preencha nome e descrição');
+    if (!formRecompensa.nome.trim()) {
+      toast.error('Informe o nome da recompensa.');
       return;
     }
 
@@ -166,8 +234,8 @@ export default function RewardsPage() {
     try {
       const method = editingRecompensaId ? 'PUT' : 'POST';
       const url = editingRecompensaId
-        ? `http://localhost:8080/admin/recompensas/${editingRecompensaId}`
-        : 'http://localhost:8080/admin/recompensas';
+        ? `${API_URL}/admin/recompensas/${editingRecompensaId}`
+        : `${API_URL}/admin/recompensas`;
 
       const response = await fetch(url, {
         method,
@@ -178,7 +246,15 @@ export default function RewardsPage() {
         body: JSON.stringify({ ...formRecompensa, id_horta: idHorta }),
       });
 
+
       if (!response.ok) {
+        const errorText = await response.text();
+
+        console.error('Erro real da API:', {
+          status: response.status,
+          resposta: errorText,
+        });
+
         throw new Error('Falha ao salvar recompensa');
       }
 
@@ -187,19 +263,20 @@ export default function RewardsPage() {
       resetRewardForm();
       await fetchData();
     } catch (error) {
-      console.error('Error saving reward:', error);
-      toast.error('Erro ao salvar recompensa');
+    console.error('Error saving reward:', error);
+    toast.error('Erro ao salvar recompensa');
     } finally {
       setIsSavingRecompensa(false);
     }
   };
+
 
   const handleDeleteRecompensa = async (id: number) => {
     if (!isAdmin || !token) return;
     if (!window.confirm('Tem certeza que deseja deletar esta recompensa?')) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/admin/recompensas/${id}`, {
+      const response = await fetch(`${API_URL}/admin/recompensas/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -218,14 +295,17 @@ export default function RewardsPage() {
 
   const handleEditRecompensa = (reward: Reward) => {
     setEditingRecompensaId(reward.id);
+
     setFormRecompensa({
       nome: reward.nome || reward.titulo || '',
       descricao: reward.descricao || '',
       tipo: reward.tipo || 'Produto',
       preco: Number(reward.preco) || 0,
-      quantidade_disponivel: Number(reward.quantidade_disponivel) || 0,
+      quantidade_disponivel: Number(
+        reward.quantidade_disponivel ?? reward.total ?? 0
+      ),
     });
-    setShowFormRecompensa(true);
+    setShowFormRecompensa(false);
   };
 
   const getCategoryColor = (category: string) => {
@@ -273,53 +353,60 @@ export default function RewardsPage() {
         </div>
       </div>
 
+      {!isAdmin && <p className="-mt-3 mb-5 rounded-lg border border-[#e3eadc] bg-[#f7faf4] px-3.5 py-2.5 text-[11px] text-[#687669]">Escolha a recompensa que faz sentido para você. O custo é descontado do seu saldo; seus níveis e XP continuam ligados às tarefas concluídas.</p>}
+
+      {!isAdmin && <MyRedeemedRewardsSection rewards={myRedemptions} loading={isLoadingMyRedemptions} error={myRedemptionsError} />}
+
       {isAdmin && showFormRecompensa && (
         <div className="bg-white rounded-[14px] border border-gray-200 p-5 space-y-4 mb-5">
-          <h3 className="text-[16px] text-neutral-950 font-semibold">
-            {editingRecompensaId ? 'Editar recompensa' : 'Criar nova recompensa'}
-          </h3>
+          <div>
+            <h3 className="text-[16px] font-semibold text-neutral-950">Criar nova recompensa</h3>
+            <p className="mt-1.5 max-w-3xl text-[12px] leading-5 text-[#66736a]">Cadastre uma recompensa que os membros da horta poderão resgatar com as moedas conquistadas nas tarefas. Preencha os dados e escolha o tipo de recompensa.</p>
+          </div>
 
-          <input
-            type="text"
-            placeholder="Nome"
-            value={formRecompensa.nome}
-            onChange={(e) => setFormRecompensa({ ...formRecompensa, nome: e.target.value })}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-[#00a63e]"
-          />
-
-          <textarea
-            placeholder="Descrição"
-            value={formRecompensa.descricao}
-            onChange={(e) => setFormRecompensa({ ...formRecompensa, descricao: e.target.value })}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-[#00a63e] min-h-16"
-          />
-
-          <select
-            value={formRecompensa.tipo}
-            onChange={(e) => setFormRecompensa({ ...formRecompensa, tipo: e.target.value })}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[14px]"
-          >
-            <option value="Produto">Produto</option>
-            <option value="Workshop">Workshop</option>
-            <option value="Serviço">Serviço</option>
-            <option value="Outro">Outro</option>
-          </select>
-
-          <div className="grid grid-cols-2 gap-3">
+          <label className="block text-[12px] font-medium text-[#4a5565]">Nome
             <input
-              type="number"
-              placeholder="Custo (moedas)"
-              value={formRecompensa.preco}
-              onChange={(e) => setFormRecompensa({ ...formRecompensa, preco: Number(e.target.value) })}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-[14px]"
+              type="text"
+              placeholder="Ex.: Kit de ferramentas para horta"
+              value={formRecompensa.nome}
+              onChange={(e) => setFormRecompensa({ ...formRecompensa, nome: e.target.value })}
+              className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2 text-[14px] outline-none focus:border-[#00a63e]"
             />
-            <input
-              type="number"
-              placeholder="Quantidade disponível"
-              value={formRecompensa.quantidade_disponivel}
-              onChange={(e) => setFormRecompensa({ ...formRecompensa, quantidade_disponivel: Number(e.target.value) })}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-[14px]"
+          </label>
+
+          <label className="block text-[12px] font-medium text-[#4a5565]">Descrição
+            <textarea
+              placeholder="Explique o que o membro receberá e eventuais condições de resgate..."
+              value={formRecompensa.descricao}
+              onChange={(e) => setFormRecompensa({ ...formRecompensa, descricao: e.target.value })}
+              className="mt-1.5 min-h-20 w-full rounded-lg border border-gray-200 px-3 py-2 text-[14px] outline-none focus:border-[#00a63e]"
             />
+            <span className="mt-1 block text-[11px] leading-4 text-[#718075]">Inclua o conteúdo da recompensa e qualquer condição importante para resgatá-la.</span>
+          </label>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block text-[12px] font-medium text-[#4a5565]">Custo em moedas
+              <input
+                type="number"
+                min="0"
+                placeholder="Ex.: 100"
+                value={formRecompensa.preco}
+                onChange={(e) => setFormRecompensa({ ...formRecompensa, preco: Number(e.target.value) })}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2 text-[14px]"
+              />
+              <span className="mt-1 block text-[11px] leading-4 text-[#718075]">Quantidade de moedas descontada no resgate.</span>
+            </label>
+            <label className="block text-[12px] font-medium text-[#4a5565]">Quantidade disponível
+              <input
+                type="number"
+                min="0"
+                placeholder="Ex.: 10"
+                value={formRecompensa.quantidade_disponivel}
+                onChange={(e) => setFormRecompensa({ ...formRecompensa, quantidade_disponivel: Number(e.target.value) })}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2 text-[14px]"
+              />
+              <span className="mt-1 block text-[11px] leading-4 text-[#718075]">Número de resgates disponíveis para os membros.</span>
+            </label>
           </div>
 
           <div className="flex gap-3">
@@ -344,7 +431,7 @@ export default function RewardsPage() {
       )}
 
       {isAdmin && (
-        <div className="bg-white rounded-[14px] border border-gray-200 p-4 mb-5">
+        <div id="reward-redemption-history" ref={redemptionHistoryRef} className="scroll-mt-5 bg-white rounded-[14px] border border-gray-200 p-4 mb-5">
           <h3 className="text-[15px] font-semibold text-neutral-950 mb-3">Recompensas resgatadas da sua horta</h3>
           <div className="space-y-2">
             {recompensasResgatadasHorta.length === 0 ? (
@@ -363,7 +450,7 @@ export default function RewardsPage() {
         </div>
       )}
 
-      <div className="space-y-7">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {isLoadingRewards ? (
           <div className="flex justify-center py-8">
             <Loader className="size-5 animate-spin text-[#00a63e]" />
@@ -401,65 +488,192 @@ export default function RewardsPage() {
                 </div>
 
                 <div className="p-6">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <h3 className="text-[16px] text-neutral-950">{title}</h3>
-                    {isAdmin && (
-                      <div className="flex gap-1">
+                  {editingRecompensaId === reward.id && isAdmin ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-[16px] font-semibold text-neutral-950">
+                          Editar recompensa
+                        </h3>
+
                         <button
-                          onClick={() => handleEditRecompensa(reward)}
-                          className="p-2 hover:bg-blue-50 rounded-lg text-blue-600"
-                          title="Editar"
+                          onClick={() => {
+                            setEditingRecompensaId(null);
+                            resetRewardForm();
+                          }}
+                          className="text-gray-500 hover:text-gray-700 text-lg"
+                          title="Cancelar edição"
                         >
-                          <Edit2 className="size-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteRecompensa(reward.id)}
-                          className="p-2 hover:bg-red-50 rounded-lg text-red-600"
-                          title="Deletar"
-                        >
-                          <Trash2 className="size-4" />
+                          ✕
                         </button>
                       </div>
-                    )}
-                  </div>
 
-                  <p className="text-[14px] text-[#717182] mb-4">{reward.descricao}</p>
+                      <input
+                        type="text"
+                        placeholder="Nome"
+                        value={formRecompensa.nome}
+                        onChange={(e) =>
+                          setFormRecompensa({
+                            ...formRecompensa,
+                            nome: e.target.value,
+                          })
+                        }
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-[#00a63e]"
+                      />
 
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`${getCategoryColor(reward.tipo)} text-[12px] px-2.5 py-1 rounded-lg`}>
-                      {reward.tipo}
-                    </span>
-                    <span className="text-[14px] text-[#4a5565]">{available} disponíveis</span>
-                  </div>
+                      <textarea
+                        placeholder="Descreva a recompensa e o que o membro receberá..."
+                        value={formRecompensa.descricao}
+                        onChange={(e) =>
+                          setFormRecompensa({
+                            ...formRecompensa,
+                            descricao: e.target.value,
+                          })
+                        }
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-[#00a63e] min-h-20"
+                      />
 
-                  {reward.horta && <p className="text-[12px] text-[#6a7282] mb-4">{reward.horta}</p>}
+                      <select
+                        value={formRecompensa.tipo}
+                        onChange={(e) =>
+                          setFormRecompensa({
+                            ...formRecompensa,
+                            tipo: e.target.value,
+                          })
+                        }
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[14px]"
+                      >
+                        <option value="Produto">Produto</option>
+                        <option value="Workshop">Workshop</option>
+                        <option value="Serviço">Serviço</option>
+                        <option value="Outro">Outro</option>
+                      </select>
 
-                  {isAdmin ? (
-                    <div className="w-full py-2.5 rounded-lg text-[14px] text-center bg-gray-100 text-[#4a5565]">
-                      Modo admin: gerencie pelas ações acima
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="number"
+                          placeholder="Custo (moedas)"
+                          value={formRecompensa.preco}
+                          onChange={(e) =>
+                            setFormRecompensa({
+                              ...formRecompensa,
+                              preco: Number(e.target.value),
+                            })
+                          }
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-[14px]"
+                        />
+
+                        <input
+                          type="number"
+                          placeholder="Quantidade disponível"
+                          value={formRecompensa.quantidade_disponivel}
+                          onChange={(e) =>
+                            setFormRecompensa({
+                              ...formRecompensa,
+                              quantidade_disponivel: Number(e.target.value),
+                            })
+                          }
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-[14px]"
+                        />
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={handleSaveRecompensa}
+                          disabled={isSavingRecompensa}
+                          className="flex-1 bg-[#00a63e] text-white text-[14px] py-2 rounded-lg hover:bg-[#008236] disabled:opacity-70"
+                        >
+                          {isSavingRecompensa ? 'Salvando...' : 'Salvar alterações'}
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setEditingRecompensaId(null);
+                            resetRewardForm();
+                          }}
+                          className="flex-1 bg-gray-200 text-[#4a5565] text-[14px] py-2 rounded-lg"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => redeemReward(reward.id, idPerfil)}
-                      disabled={!canAfford}
-                      className={`w-full py-2.5 rounded-lg text-[14px] text-white flex items-center justify-center gap-2 transition-all ${
-                        canAfford
-                          ? 'bg-[#00a63e] hover:bg-[#008236]'
-                          : 'bg-[#030213] opacity-50 cursor-not-allowed'
-                      }`}
-                    >
-                      {canAfford ? (
-                        <>
-                          <Gift className="size-4" />
-                          Resgatar
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="size-4" />
-                          Moedas insuficientes
-                        </>
+                    <>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <h3 className="text-[16px] text-neutral-950">
+                          {title}
+                        </h3>
+
+                        {isAdmin && (
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleEditRecompensa(reward)}
+                              className="p-2 hover:bg-blue-50 rounded-lg text-blue-600"
+                              title="Editar"
+                            >
+                              <Edit2 className="size-4" />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteRecompensa(reward.id)}
+                              className="p-2 hover:bg-red-50 rounded-lg text-red-600"
+                              title="Deletar"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="text-[14px] text-[#717182] mb-4">
+                        {reward.descricao?.trim() || 'Descrição não informada.'}
+                      </p>
+
+                      <div className="flex items-center justify-between mb-2">
+                        <span
+                          className={`${getCategoryColor(reward.tipo)} text-[12px] px-2.5 py-1 rounded-lg`}
+                        >
+                          {reward.tipo}
+                        </span>
+
+                        <span className="text-[14px] text-[#4a5565]">
+                          {available} disponíveis
+                        </span>
+                      </div>
+
+                      {reward.horta && (
+                        <p className="text-[12px] text-[#6a7282] mb-4">
+                          {reward.horta}
+                        </p>
                       )}
-                    </button>
+
+                      {isAdmin ? (
+                        <div className="w-full py-2.5 rounded-lg text-[14px] text-center bg-gray-100 text-[#4a5565]">
+                          Modo admin: gerencie pelas ações acima
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => redeemReward(reward.id)}
+                          disabled={!canAfford}
+                          className={`w-full py-2.5 rounded-lg text-[14px] text-white flex items-center justify-center gap-2 transition-all ${
+                            canAfford
+                              ? 'bg-[#00a63e] hover:bg-[#008236]'
+                              : 'bg-[#030213] opacity-50 cursor-not-allowed'
+                          }`}
+                        >
+                          {canAfford ? (
+                            <>
+                              <Gift className="size-4" />
+                              Resgatar
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="size-4" />
+                              Moedas insuficientes
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

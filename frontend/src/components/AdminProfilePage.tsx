@@ -1,0 +1,788 @@
+import { API_URL } from '../config';
+import {User,ShieldCheck,ClipboardList,CheckCircle,Sprout,LogOut,Mail,Lock,ChevronRight, MapPin} from 'lucide-react';
+import { toast } from 'sonner';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { HortaMap } from './HortaMap';
+import ProfileLocationEditor from './ProfileLocationEditor';
+
+interface Task {
+  id: number;
+  titulo: string;
+  tipo: string;
+  dificuldade: number;
+  moedas: number;
+  concluido?: boolean;
+}
+
+interface AdminProfilePageProps {
+  onLogout?: () => void;
+  editGardenOnOpen?: boolean;
+}
+
+export default function AdminProfilePage({
+  onLogout,
+  editGardenOnOpen = false,
+}: AdminProfilePageProps) {
+  const { logout, token, user, updateUser, updatePassword, activeGarden, leaveGarden, refreshUser } = useAuth();
+
+  const [adminTasks, setAdminTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState(user?.nome || '');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState(user?.email || '');
+  const [isSavingEmail, setIsSavingEmail] = useState(false);
+  const [isEditingPassword, setIsEditingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [isEditingLocation, setIsEditingLocation] = useState(false);
+  const [newLatitude, setNewLatitude] = useState('');
+  const [newLongitude, setNewLongitude] = useState('');
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
+  const [isFetchingGeoLocation, setIsFetchingGeoLocation] = useState(false);
+  const [newEndereco, setNewEndereco] = useState('');
+  const [newDescricaoHorta, setNewDescricaoHorta] = useState('');
+  const [newCidadeHorta, setNewCidadeHorta] = useState('');
+  const [newUfHorta, setNewUfHorta] = useState('');
+  const [newContatoHorta, setNewContatoHorta] = useState('');
+  const [isLeavingMemberRole, setIsLeavingMemberRole] = useState(false);
+
+  const leaveMemberRole = async () => {
+    if (!activeGarden || activeGarden.role !== 'ADMIN' || !user?.roles.some((role) => role.id_horta === activeGarden.id_horta && role.role === 'MEMBER') || isLeavingMemberRole) return;
+    const confirmed = window.confirm(`Sair como participante de ${activeGarden.horta_nome}? Você perderá acesso à comunidade como participante até voltar. Tarefas em andamento e registros históricos serão preservados, mas você não poderá continuar essas tarefas enquanto não voltar a participar. Sua administração desta horta e sua conta permanecerão ativas.`);
+    if (!confirmed) return;
+    setIsLeavingMemberRole(true);
+    try {
+      await leaveGarden(activeGarden.id_horta);
+      toast.success('Sua participação foi encerrada. Sua função administrativa permanece ativa.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível encerrar sua participação.');
+    } finally {
+      setIsLeavingMemberRole(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!editGardenOnOpen) return;
+    const garden = activeGarden?.role === 'ADMIN' ? activeGarden : null;
+    setNewLatitude(garden?.latitude != null ? String(garden.latitude) : '');
+    setNewLongitude(garden?.longitude != null ? String(garden.longitude) : '');
+    setNewEndereco(garden?.endereco || '');
+    setNewDescricaoHorta(garden?.descricao || '');
+    setNewCidadeHorta(garden?.cidade || '');
+    setNewUfHorta(garden?.uf || '');
+    setNewContatoHorta(garden?.contato || '');
+    setIsEditingLocation(true);
+    requestAnimationFrame(() => document.getElementById('admin-garden-location')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }, [editGardenOnOpen, user]);
+
+  useEffect(() => {
+    const fetchAdminData = async () => {
+      if (!token) return;
+
+      setIsLoading(true);
+
+      try {
+        const tasksRes = await fetch(`${API_URL}/admin/tarefas?id_horta=${activeGarden?.id_horta ?? ''}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!tasksRes.ok) {
+          throw new Error('Falha ao carregar tarefas');
+        }
+
+        const tasksData: Task[] = await tasksRes.json();
+        setAdminTasks(tasksData);
+      } catch (error) {
+        console.error('Erro ao carregar dados administrativos:', error);
+        toast.error('Erro ao carregar estatísticas da horta');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAdminData();
+  }, [token, activeGarden?.id_horta, activeGarden?.role]);
+
+  const hortaNome =
+    (activeGarden?.role === 'ADMIN' ? activeGarden.horta_nome : null) ||
+    'Sua horta';
+
+  const tarefasPendentes = adminTasks.filter(
+    (task) => !task.concluido
+  ).length;
+
+  const tarefasConcluidas = adminTasks.filter(
+    (task) => task.concluido
+  ).length;
+
+  const mudasPlantadas = '—';
+
+  //Alterar senha do usuário 
+  const handleSavePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error('Preencha todos os campos');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error('A nova senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error('As senhas não coincidem');
+      return;
+    }
+
+    setIsSavingPassword(true);
+
+    try {
+      await updatePassword(currentPassword, newPassword);
+
+      toast.success('Senha alterada com sucesso');
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setIsEditingPassword(false);
+    } catch (error) {
+      console.error('Erro ao alterar senha:', error);
+
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao alterar senha'
+      );
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+  
+  const handleSaveLocation = async () => {
+  const hasLatitude = Boolean(newLatitude.trim());
+  const hasLongitude = Boolean(newLongitude.trim());
+  if (hasLatitude !== hasLongitude) return toast.error('Informe latitude e longitude juntas ou deixe ambas vazias');
+  const lat = hasLatitude ? Number(newLatitude) : null;
+  const lng = hasLongitude ? Number(newLongitude) : null;
+  if (hasLatitude && (!Number.isFinite(lat) || Math.abs(lat!) > 90)) return toast.error('Latitude inválida');
+  if (hasLongitude && (!Number.isFinite(lng) || Math.abs(lng!) > 180)) return toast.error('Longitude inválida');
+  if (newEndereco.trim().length > 255) return toast.error('O endereço deve ter no máximo 255 caracteres');
+  if (newDescricaoHorta.trim().length > 255) return toast.error('A descrição deve ter no máximo 255 caracteres');
+  if (newCidadeHorta.trim() && !newUfHorta.trim()) return toast.error('Informe a UF junto com a cidade');
+  if (newContatoHorta.trim().length > 160) return toast.error('O contato deve ter no máximo 160 caracteres');
+
+  setIsSavingLocation(true);
+  try {
+    const idHorta = activeGarden?.role === 'ADMIN' ? activeGarden.id_horta : undefined;
+    const response = await fetch(
+      `${API_URL}/admin/horta?id_horta=${idHorta}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ latitude: lat, longitude: lng, endereco: newEndereco, descricao: newDescricaoHorta, cidade: newCidadeHorta, uf: newUfHorta, contato: newContatoHorta }),
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Falha ao atualizar informações da horta');
+    await refreshUser();
+
+    toast.success('Informações da horta atualizadas');
+    setIsEditingLocation(false);
+  } catch (error) {
+    console.error('Erro ao atualizar localização:', error);
+    toast.error(error instanceof Error ? error.message : 'Erro ao atualizar informações da horta');
+  } finally {
+    setIsSavingLocation(false);
+  }
+};
+
+const handleUseCurrentLocation = () => {
+  if (!navigator.geolocation) {
+    toast.error('Geolocalização não é suportada neste navegador');
+    return;
+  }
+
+  setIsFetchingGeoLocation(true);
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      setNewLatitude(lat.toFixed(8));
+      setNewLongitude(lng.toFixed(8));
+
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+        );
+        const data = await res.json();
+        if (data?.display_name) {
+          setNewEndereco(data.display_name);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar endereço:', error);
+      } finally {
+        setIsFetchingGeoLocation(false);
+      }
+    },
+    (error) => {
+      console.error('Erro ao obter localização:', error);
+      toast.error('Não foi possível obter sua localização atual');
+      setIsFetchingGeoLocation(false);
+    }
+  );
+};
+
+  // alterar e-mail do usuário
+  const handleSaveEmail = async () => {
+    const email = newEmail.trim();
+
+    if (!email || !email.includes('@')) {
+      toast.error('Informe um e-mail válido');
+      return;
+    }
+
+    setIsSavingEmail(true);
+
+    try {
+      await updateUser({ email });
+
+      toast.success('E-mail atualizado com sucesso');
+      setIsEditingEmail(false);
+    } catch (error) {
+      console.error('Erro ao atualizar e-mail:', error);
+
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao atualizar e-mail'
+      );
+    } finally {
+      setIsSavingEmail(false);
+    }
+  };
+
+  // alterar nome do usuário
+  const handleSaveName = async () => {
+  if (!newName.trim()) {
+    toast.error('Informe um nome válido');
+    return;
+  }
+
+  setIsSavingName(true);
+
+  try {
+    await updateUser({ nome: newName.trim() });
+
+    toast.success('Nome atualizado com sucesso');
+    setIsEditingName(false);
+  } catch (error) {
+    console.error('Erro ao atualizar nome:', error);
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : 'Erro ao atualizar nome'
+    );
+  } finally {
+    setIsSavingName(false);
+  }
+};
+
+  const handleLogout = () => {
+    logout();
+    onLogout?.();
+  };
+
+  return (
+  <div className="min-h-screen bg-gray-50 pt-16 pb-6">
+    {/* Cabeçalho */}
+    <div className="px-4 mb-6">
+      <div className="bg-gradient-to-br from-[#00a63e] to-[#008236] rounded-[20px] p-6 text-white">
+        <div className="flex items-center gap-2 mb-4">
+          <ShieldCheck className="size-4 text-white/90" />
+
+          <span className="text-white/90 text-[12px] font-semibold tracking-wide uppercase">
+            Perfil administrativo
+          </span>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="size-16 rounded-full bg-white/20 flex items-center justify-center">
+            <User className="size-8" />
+          </div>
+
+          <div>
+            <h1 className="text-[21px] font-semibold">
+              {user?.nome || 'Administrador'}
+            </h1>
+
+            <p className="text-white/90 text-[13px] mt-1">
+              {hortaNome}
+            </p>
+            <p className="text-white/80 text-[12px] mt-1">{user?.email || 'E-mail não informado'}</p>
+            <div className="mt-1"><ProfileLocationEditor /></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Estatísticas */}
+    <div className="px-4 mb-6">
+      <h2 className="text-[16px] font-semibold text-neutral-950 mb-4 px-2">
+        Estatísticas da horta
+      </h2>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-[14px] border border-gray-200 p-4 flex flex-col items-center">
+          <ClipboardList className="size-6 text-[#f0b100] mb-2" />
+
+          <p className="text-[24px] font-semibold text-neutral-950 mb-1">
+            {isLoading ? '—' : tarefasPendentes}
+          </p>
+
+          <p className="text-[11px] text-[#4a5565] text-center">
+            Tarefas pendentes
+          </p>
+        </div>
+
+        <div className="bg-white rounded-[14px] border border-gray-200 p-4 flex flex-col items-center">
+          <CheckCircle className="size-6 text-[#00a63e] mb-2" />
+
+          <p className="text-[24px] font-semibold text-neutral-950 mb-1">
+            {isLoading ? '—' : tarefasConcluidas}
+          </p>
+
+          <p className="text-[11px] text-[#4a5565] text-center">
+            Tarefas concluídas
+          </p>
+        </div>
+
+        <div className="bg-white rounded-[14px] border border-gray-200 p-4 flex flex-col items-center">
+          <Sprout className="size-6 text-[#16a34a] mb-2" />
+
+          <p className="text-[24px] font-semibold text-neutral-950 mb-1">
+            {mudasPlantadas}
+          </p>
+
+          <p className="text-[11px] text-[#4a5565] text-center">
+            Mudas plantadas
+          </p>
+        </div>
+
+        <div className="bg-white rounded-[14px] border border-gray-200 p-4 flex flex-col items-center">
+          <ClipboardList className="size-6 text-[#64748b] mb-2" />
+
+          <p className="text-[24px] font-semibold text-neutral-950 mb-1">
+            {isLoading ? '—' : adminTasks.length}
+          </p>
+
+          <p className="text-[11px] text-[#4a5565] text-center">
+            Total de tarefas
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {/* Informações da conta */}
+    <div className="px-4 mb-6">
+      <h2 className="text-[16px] font-semibold text-neutral-950 mb-4 px-2">
+        Informações da conta
+      </h2>
+
+      <div className="bg-white rounded-[14px] border border-gray-200 overflow-hidden">
+        {/* Nome */}
+        <div className="p-4 border-b border-gray-100">
+          {!isEditingName ? (
+            <button
+              type="button"
+              onClick={() => {
+                setNewName(user?.nome || '');
+                setIsEditingName(true);
+              }}
+              className="w-full flex items-center gap-3 text-left"
+            >
+              <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center">
+                <User className="size-5 text-gray-600" />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] text-gray-500">
+                  Nome
+                </p>
+
+                <p className="text-[14px] text-neutral-950 truncate">
+                  {user?.nome || 'Não informado'}
+                </p>
+              </div>
+
+              <ChevronRight className="size-5 text-gray-400" />
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center">
+                  <User className="size-5 text-gray-600" />
+                </div>
+
+                <p className="text-[14px] font-medium text-neutral-950">
+                  Alterar nome
+                </p>
+              </div>
+
+              <input
+                type="text"
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+                placeholder="Digite seu novo nome"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500"
+              />
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingName(false)}
+                  disabled={isSavingName}
+                  className="flex-1 rounded-lg border border-gray-300 py-2 text-[13px] text-gray-700"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveName}
+                  disabled={isSavingName}
+                  className="flex-1 rounded-lg bg-[#00a63e] py-2 text-[13px] text-white disabled:opacity-60"
+                >
+                  {isSavingName ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        <div id="admin-garden-location" className="p-4 border-b border-gray-100 scroll-mt-5">
+      {!isEditingLocation ? (
+      <>
+      <button
+        type="button"
+        onClick={() => {
+          const horta = activeGarden?.role === 'ADMIN' ? activeGarden : null;
+          setNewLatitude(horta?.latitude != null ? String(horta.latitude) : '');
+          setNewLongitude(horta?.longitude != null ? String(horta.longitude) : '');
+          setNewEndereco(horta?.endereco || '');
+          setNewDescricaoHorta(horta?.descricao || '');
+          setNewCidadeHorta(horta?.cidade || '');
+          setNewUfHorta(horta?.uf || '');
+          setNewContatoHorta(horta?.contato || '');
+          setIsEditingLocation(true);
+        }}
+        className="w-full flex items-center gap-3 text-left"
+      >
+        <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center">
+          <MapPin className="size-5 text-gray-600" />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] text-gray-500">
+            Localização
+          </p>
+
+          <p className="text-[14px] text-neutral-950 truncate">
+            {(() => {
+              const horta = activeGarden?.role === 'ADMIN' ? activeGarden : null;
+              if (horta?.endereco) return horta.endereco;
+              return horta?.latitude != null && horta?.longitude != null
+                ? `${horta.latitude}, ${horta.longitude}`
+                : 'Não informado';
+            })()}
+          </p>
+        </div>
+
+        <ChevronRight className="size-5 text-gray-400" />
+      </button>
+      {activeGarden?.role === 'ADMIN' && <div className="mt-3 space-y-3 pl-12">
+        <p className="text-[12px] leading-5 text-[#66736a]">{activeGarden.descricao || 'Descrição não cadastrada.'}</p>
+        <p className="text-[12px] text-[#66736a]">{[activeGarden.cidade, activeGarden.uf].filter(Boolean).join(' / ') || 'Cidade e UF não informadas'}</p>
+        {activeGarden.contato && <p className="text-[12px] text-[#66736a]">Contato: {activeGarden.contato}</p>}
+        <p className="text-[11px] text-[#718075]">{activeGarden.latitude != null && activeGarden.longitude != null ? `${activeGarden.latitude}, ${activeGarden.longitude}` : 'Coordenadas não informadas'}</p>
+        <HortaMap latitude={activeGarden.latitude} longitude={activeGarden.longitude} nome={activeGarden.horta_nome} endereco={activeGarden.endereco} height="180px" />
+      </div>}
+      </>
+    ) : (
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center">
+            <MapPin className="size-5 text-gray-600" />
+          </div>
+
+          <p className="text-[14px] font-medium text-neutral-950">
+            Alterar localização
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleUseCurrentLocation}
+          disabled={isFetchingGeoLocation}
+          className="w-full flex items-center justify-center gap-2 rounded-lg border border-green-600 text-green-600 py-2 text-[13px] font-medium disabled:opacity-60"
+        >
+          {isFetchingGeoLocation ? 'Obtendo localização...' : 'Usar minha localização atual'}
+        </button>
+
+        <div>
+        <label className="text-[12px] text-gray-500 mb-1 block">Endereço</label>
+        <textarea
+          value={newEndereco}
+          onChange={(event) => setNewEndereco(event.target.value)}
+          placeholder="Endereço da horta"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500 min-h-16"
+        />
+      </div>
+
+        <div className="grid grid-cols-[1fr_5rem] gap-3"><div><label className="text-[12px] text-gray-500 mb-1 block">Cidade</label><input maxLength={100} value={newCidadeHorta} onChange={(event) => setNewCidadeHorta(event.target.value)} placeholder="Cidade" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500" /></div><div><label className="text-[12px] text-gray-500 mb-1 block">UF</label><input maxLength={2} value={newUfHorta} onChange={(event) => setNewUfHorta(event.target.value.toUpperCase())} placeholder="UF" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500" /></div></div>
+
+        <div><label className="text-[12px] text-gray-500 mb-1 block">Contato</label><input maxLength={160} value={newContatoHorta} onChange={(event) => setNewContatoHorta(event.target.value)} placeholder="Telefone ou e-mail" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500" /></div>
+
+        <div>
+          <label className="text-[12px] text-gray-500 mb-1 block">Descrição da horta</label>
+          <textarea maxLength={255} value={newDescricaoHorta} onChange={(event) => setNewDescricaoHorta(event.target.value)} placeholder="Conte o que torna esta comunidade especial" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500 min-h-16" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[12px] text-gray-500 mb-1 block">Latitude</label>
+            <input
+              type="number"
+              step="any"
+              value={newLatitude}
+              onChange={(event) => setNewLatitude(event.target.value)}
+              placeholder="-15.79381800"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+          <div>
+            <label className="text-[12px] text-gray-500 mb-1 block">Longitude</label>
+            <input
+              type="number"
+              step="any"
+              value={newLongitude}
+              onChange={(event) => setNewLongitude(event.target.value)}
+              placeholder="-47.88277800"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setIsEditingLocation(false)}
+            disabled={isSavingLocation}
+            className="flex-1 rounded-lg border border-gray-300 py-2 text-[13px] text-gray-700"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveLocation}
+            disabled={isSavingLocation}
+            className="flex-1 rounded-lg bg-green-600 text-white py-2 text-[13px] font-medium disabled:opacity-70"
+          >
+            {isSavingLocation ? 'Salvando...' : 'Salvar'}
+          </button>
+        </div>
+      </div>
+    )}
+    </div>
+        
+        {/* E-mail */}
+        <div className="p-4 border-b border-gray-100">
+          {!isEditingEmail ? (
+            <button
+              type="button"
+              onClick={() => {
+                setNewEmail(user?.email || '');
+                setIsEditingEmail(true);
+              }}
+              className="w-full flex items-center gap-3 text-left"
+            >
+              <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center">
+                <Mail className="size-5 text-gray-600" />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] text-gray-500">
+                  E-mail
+                </p>
+
+                <p className="text-[14px] text-neutral-950 truncate">
+                  {user?.email || 'Não informado'}
+                </p>
+              </div>
+              <ChevronRight className="size-5 text-gray-400" />
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center">
+                  <Mail className="size-5 text-gray-600" />
+                </div>
+
+                <p className="text-[14px] font-medium text-neutral-950">
+                  Alterar e-mail
+                </p>
+              </div>
+
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(event) => setNewEmail(event.target.value)}
+                placeholder="Digite seu novo e-mail"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500"
+              />
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingEmail(false)}
+                  disabled={isSavingEmail}
+                  className="flex-1 rounded-lg border border-gray-300 py-2 text-[13px] text-gray-700"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveEmail}
+                  disabled={isSavingEmail}
+                  className="flex-1 rounded-lg bg-[#00a63e] py-2 text-[13px] text-white disabled:opacity-60"
+                >
+                  {isSavingEmail ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Senha */}
+        <div className="p-4">
+          {!isEditingPassword ? (
+            <button
+              type="button"
+              onClick={() => setIsEditingPassword(true)}
+              className="w-full flex items-center gap-3 text-left"
+            >
+              <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center">
+                <Lock className="size-5 text-gray-600" />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] text-gray-500">
+                  Senha
+                </p>
+
+                <p className="text-[14px] text-neutral-950">
+                  Alterar senha
+                </p>
+              </div>
+
+              <ChevronRight className="size-5 text-gray-400" />
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center">
+                  <Lock className="size-5 text-gray-600" />
+                </div>
+
+                <p className="text-[14px] font-medium text-neutral-950">
+                  Alterar senha
+                </p>
+              </div>
+
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                placeholder="Senha atual"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500"
+              />
+
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                placeholder="Nova senha"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500"
+              />
+
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Confirme a nova senha"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-green-500"
+              />
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setIsEditingPassword(false);
+                  }}
+                  disabled={isSavingPassword}
+                  className="flex-1 rounded-lg border border-gray-300 py-2 text-[13px] text-gray-700"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSavePassword}
+                  disabled={isSavingPassword}
+                  className="flex-1 rounded-lg bg-[#00a63e] py-2 text-[13px] text-white disabled:opacity-60"
+                >
+                  {isSavingPassword ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+    {activeGarden?.role === 'ADMIN' && user?.roles.some((role) => role.id_horta === activeGarden.id_horta && role.role === 'MEMBER') && <div className="px-4 mb-3 rounded-[14px] border border-gray-200 bg-white p-4">
+      <h2 className="text-[13px] font-semibold text-[#34453a]">Participação nesta horta</h2>
+      <p className="mt-1 text-[11px] leading-4 text-[#718075]">Encerrar a participação não altera sua administração. Suas tarefas em andamento e seus registros serão preservados, mas não poderão ser atualizados enquanto você não voltar como participante.</p>
+      <button type="button" disabled={isLeavingMemberRole} onClick={() => void leaveMemberRole()} className="mt-3 text-[12px] font-medium text-[#9b3d34] hover:underline disabled:opacity-60">{isLeavingMemberRole ? 'Saindo…' : 'Sair da horta como participante'}</button>
+    </div>}
+
+    {/* Botão sair */}
+    <div className="px-4">
+      <button
+        type="button"
+        onClick={handleLogout}
+        className="w-full bg-white border border-gray-200 rounded-[14px] py-3 px-4 flex items-center justify-center gap-2 text-[#4a5565] hover:bg-gray-50 transition-colors"
+      >
+        <LogOut className="size-5" />
+
+        <span className="text-[14px]">
+          Sair da conta
+        </span>
+      </button>
+    </div>
+  </div>
+);
+}
